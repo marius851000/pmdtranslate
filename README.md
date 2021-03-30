@@ -17,10 +17,12 @@ Once you start editing the string, the input message are in the form of ``<id> t
 There may also have special symbol like ``[CENTER]`` or ``[PARTNERNAME]``. Those are special content that should'nt be translated. If you want to write a ``[``, you need to write ``\[``, and to write a ``\``, you need to write ``\\``. For example, if I want to display ``[HELLO]`` on the screen (rather than having the effect of this character), I would write ``\[HELLO]``. (the ``]`` doesn't need a ``\``).
 
 ### use translation in game
-First, you'll need a way to patch the game. This is outside of the scope of this tutorial, but here are still some information: The US romid of PSMD is ``0004000000174600``, and I recommend either luma if you want to test on a real 3ds, or the mod function of the citra emulator.
+First, you'll need a way to patch the game. One cool trick about PSMD is that the game include the functionality to read custom translation (but not custom font) from the SD card. To do this, just place your custom ``message_us.bin`` into the ``private/Nintendo 3DS/app`` folder on the sdcard (create it if needed).
 
 To create a new ``message_us.bin`` file to translate the game, you'll need to run :
-``pmdtranslate farc from-po <source .po or .pot file> <target message_us.bin file>``. You should then have the target ``message_us.bin``, that you should load in the game (replace the ``message_us.bin`` file via the patch tool).
+``pmdtranslate farc from-po <source .po or .pot file> <target message_us.bin file>``. You should then have the target ``message_us.bin``, that you should load in the game (by placing it at ``private/Nintendo 3DS/app/message_us.bin`` on the sdcard).
+
+You can also patch the file using more traditional patching mathod.
 
 ### change font
 You'll need to use [pmdfonttool](https://github.com/marius851000/pmdfonttool). I need to test the possibility to properly adde new character.
