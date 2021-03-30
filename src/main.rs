@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     fs::{read_dir, File},
-    io::{Cursor, Read, Write},
+    io::{BufReader, BufWriter, Cursor, Read, Write},
     path::PathBuf,
     str::FromStr,
 };
@@ -101,7 +101,7 @@ fn topot(mode: Mode, topot_p: ToPotParameter) -> Result<()> {
                     .to_str()
                     .context("can't transform the file name to an utf8 string")?;
                 let file_path = topot_p.input.join(file_entry.file_name());
-                let mut file = File::open(file_path)?;
+                let mut file = BufReader::new(File::open(file_path)?);
                 let message_bin = MessageBin::load_file(&mut file)?;
                 for (hash, unk, text) in message_bin.messages().iter() {
                     gettext.entrys.push(Entry::new(
@@ -114,7 +114,9 @@ fn topot(mode: Mode, topot_p: ToPotParameter) -> Result<()> {
             }
         }
         Mode::Farc => {
-            let farc_file = File::open(&topot_p.input).context("can't open the input farc file")?;
+            let farc_file = BufReader::new(
+                File::open(&topot_p.input).context("can't open the input farc file")?,
+            );
             let mut farc = Farc::new(farc_file)?;
             let list_file_name = get_file_name(
                 topot_p
@@ -133,9 +135,9 @@ fn topot(mode: Mode, topot_p: ToPotParameter) -> Result<()> {
                 .unwrap_or(PathBuf::from("."))
                 .join(&list_file_name);
 
-            let mut list_file = File::open(list_file_path).with_context(|| {
+            let mut list_file = BufReader::new(File::open(list_file_path).with_context(|| {
                 format!("can't open the related list file {:?}", list_file_path)
-            })?;
+            })?);
 
             try_possible_name(&mut farc, &mut list_file).with_context(|| {
                 format!("error reading the related list file {:?}", list_file_path)
@@ -158,14 +160,15 @@ fn topot(mode: Mode, topot_p: ToPotParameter) -> Result<()> {
         }
     }
 
-    let mut out_file = File::create(&topot_p.output).context("can't open the output file")?;
+    let mut out_file =
+        BufWriter::new(File::create(&topot_p.output).context("can't open the output file")?);
     out_file.write_all(gettext.to_pot().as_bytes())?;
 
     Ok(())
 }
 
 fn frompo(mode: Mode, frompo_p: FromPoParameter) -> Result<()> {
-    let mut input_file = File::open(&frompo_p.input)?;
+    let mut input_file = BufReader::new(File::open(&frompo_p.input)?);
     let mut po_file = String::new();
     input_file.read_to_string(&mut po_file)?;
 
@@ -193,7 +196,7 @@ fn frompo(mode: Mode, frompo_p: FromPoParameter) -> Result<()> {
                 message_bin.write(&mut buffer)?;
                 farc_writer.add_hashed_file(hash_name(&file_name), buffer.into_inner());
             }
-            let mut out_file = File::create(&frompo_p.output)?;
+            let mut out_file = BufWriter::new(File::create(&frompo_p.output)?);
             farc_writer.write_hashed(&mut out_file)?;
         }
     }

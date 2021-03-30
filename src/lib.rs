@@ -26,7 +26,7 @@ pub enum PoWarning {
     LineTypeUnknown(usize, String),
     #[error("the line {0} end with an unclosed quote")]
     UnclosedQuote(usize),
-    #[error("the line {0} end iwth an escape character")]
+    #[error("the line {0} end with an escape character")]
     UnfinishedEscape(usize),
 }
 
@@ -44,7 +44,7 @@ impl GettextWriter {
         let mut result = String::new();
 
         for entry in &self.entrys {
-            let text = format!("{} {} {}", entry.hash, entry.unk, entry.text);
+            let text = format!("{} {}", entry.hash, entry.text);
             result.push_str(&format!(
                 "#. {}\nmsgid {:?}\nmsgstr \"\"\n\n",
                 &entry.source_file, text
@@ -84,10 +84,10 @@ impl GettextWriter {
                 };
                 if msgstr.is_empty() {
                     let mut msgid_splited = msgid.split(' ');
-                    let to_skip = msgid_splited.next().unwrap().len()
-                        + 1
-                        + msgid_splited.next().unwrap().len()
-                        + 1;
+                    let to_skip = msgid_splited.next().unwrap().len() + 1;
+                    /*+ msgid_splited.next().unwrap().len()
+                    + 1;*/
+ //remain of storing the unknown content.
                     *msgstr = msgid.chars().skip(to_skip).collect();
                 };
                 if comment.is_empty() {
@@ -96,19 +96,12 @@ impl GettextWriter {
                 let mut msgid_splited_iterator = msgid.split(' ');
                 if let Some(first_element) = msgid_splited_iterator.next() {
                     match u32::from_str(first_element) {
-                        Ok(hash) => {
-                            if let Some(second_element) = msgid_splited_iterator.next() {
-                                match u32::from_str(second_element) {
-                                    Ok(unk) => result.entrys.push(Entry {
-                                        hash,
-                                        unk,
-                                        source_file: comment.to_string(),
-                                        text: msgstr.to_string(),
-                                    }),
-                                    Err(_err) => todo!(),
-                                }
-                            }
-                        }
+                        Ok(hash) => result.entrys.push(Entry {
+                            hash,
+                            unk: 0,
+                            source_file: comment.to_string(),
+                            text: msgstr.to_string(),
+                        }),
                         Err(_err) => todo!(),
                     }
                 } else {
