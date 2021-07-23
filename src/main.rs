@@ -104,7 +104,7 @@ fn topot(mode: Mode, topot_p: ToPotParameter) -> Result<()> {
                 let mut file = BufReader::new(File::open(file_path)?);
                 let message_bin = MessageBin::load_file(&mut file)?;
                 for (hash, unk, text) in message_bin.messages().iter() {
-                    gettext.entrys.push(Entry::new(
+                    gettext.entries.push(Entry::new(
                         text.clone(),
                         *hash,
                         *unk,
@@ -149,7 +149,7 @@ fn topot(mode: Mode, topot_p: ToPotParameter) -> Result<()> {
                 })?;
                 let message_bin = MessageBin::load_file(&mut message_file)?;
                 for (hash, unk, text) in message_bin.messages().iter() {
-                    gettext.entrys.push(Entry::new(
+                    gettext.entries.push(Entry::new(
                         text.clone(),
                         *hash,
                         *unk,
@@ -181,7 +181,7 @@ fn frompo(mode: Mode, frompo_p: FromPoParameter) -> Result<()> {
         Mode::Folder => todo!(),
         Mode::Farc => {
             let mut translated_file: BTreeMap<String, MessageBin> = BTreeMap::new();
-            for entry in translation.entrys.iter() {
+            for entry in translation.entries.iter() {
                 let message_bin = if let Some(entry) = translated_file.get_mut(&entry.source_file) {
                     entry
                 } else {

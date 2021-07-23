@@ -19,6 +19,26 @@ impl Entry {
     }
 }
 
+pub struct EntryNoText<'a> {
+    pub hash: u32,
+    pub unk: u32,
+    pub source_file: &'a str
+}
+
+impl<'a> EntryNoText<'a> {
+    /// Take an [`Entry`], convert it to an [`EntryNoText`], also returning the text as the second output.
+    pub fn from_entry(entry: &'a Entry) -> (Self, &'a str) {
+        (
+            Self {
+                hash: entry.hash,
+                unk: entry.unk,
+                source_file: &entry.source_file
+            },
+            &entry.text
+        )
+    }
+}
+
 #[derive(Debug, Error)]
 /// A non fatal parsing error of Po file. The user should likely be informed of these
 pub enum PoWarning {
@@ -32,9 +52,30 @@ pub enum PoWarning {
 
 #[derive(Default)]
 pub struct GettextWriter {
-    pub entrys: Vec<Entry>,
+    pub entries: Vec<Entry>,
 }
 
+pub fn escape_string_for_gettext(text: &str) -> String {
+    let mut result = String::with_capacity(text.len() + 10);
+    result.push('"');
+    for ch in text.chars() {
+        if ch == '"' {
+            result.push_str("\\\"");
+        } else if ch == '\n' {
+            result.push_str("\\n");
+        } else if ch == '\r' {
+            result.push_str("\\\\r");
+        } else if ch == '\\' {
+            result.push_str("\\\\");
+        } else if ch.is_control() {
+            result.push_str(&format!("\\\\x{}{:x}{}", '{', ch as u32, '}'));
+        } else {
+            result.push(ch);
+        }
+    }
+    result.push('"');
+    result
+}
 impl GettextWriter {
     pub fn new() -> Self {
         Self::default()
@@ -43,24 +84,49 @@ impl GettextWriter {
     pub fn to_pot(&self) -> String {
         let mut result = String::new();
 
-        for entry in &self.entrys {
-            let text = format!("{} {}", entry.hash, entry.text);
-            result.push_str(&format!(
-                "#. {}\nmsgid {:?}\nmsgstr \"\"\n\n",
-                &entry.source_file, text
-            ))
+        // deduplicate the strings
+
+        let mut translate_string: Vec<(&str, Vec<EntryNoText>)> = Vec::new();
+
+        for entry in &self.entries {
+            let (entry_no_text, text) = EntryNoText::from_entry(entry);
+            let mut insert_at = None;
+            for entry in translate_string.iter_mut() {
+                if entry.0 == text {
+                    insert_at = Some(entry);
+                    break;
+                }
+            }
+            if let Some(good) = insert_at {
+                good.1.push(entry_no_text)
+            } else {
+                translate_string.push((text, vec![entry_no_text]))
+            }
         }
+
+        // create the po file
+
+        for entry in translate_string {
+            for source in entry.1 {
+                result.push_str(&format!("#. {} {} {}\n", source.source_file, source.hash, source.unk));
+            };
+            result.push_str(&format!("msgid {}\nmsgstr \"\"\n\n", escape_string_for_gettext(if entry.0 == "" {
+                " "
+            } else {
+                entry.0
+            })));
+        };
 
         result
     }
 
     pub fn from_po(file: String) -> (Self, Vec<PoWarning>) {
         let mut warning = Vec::new();
-        let mut result = GettextWriter { entrys: Vec::new() };
+        let mut result = GettextWriter { entries: Vec::new() };
 
         let mut msgid = String::new();
         let mut msgstr = String::new();
-        let mut comment = String::new();
+        let mut comment = Vec::new();
         pub enum Parsing {
             Msgid,
             Msgstr,
@@ -75,48 +141,46 @@ impl GettextWriter {
         let mut phase = Phase::Pre; //passing from data to comment mean we are into the next part
 
         let mut push_current_translation =
-            |msgid: &mut String, msgstr: &mut String, comment: &mut String| {
-                if msgid.is_empty() && msgstr.is_empty() && comment.is_empty() {
+            |msgid: &mut String, msgstr: &mut String, comment: &mut Vec<String>| {
+                if msgid.is_empty() && comment.is_empty() {
                     return;
                 };
-                if msgid.is_empty() {
-                    todo!();
+                if msgid == " " {
+                    msgid.clear();
+                    msgstr.clear();
                 };
                 if msgstr.is_empty() {
-                    let mut msgid_splited = msgid.split(' ');
-                    let to_skip = msgid_splited.next().unwrap().len() + 1;
-                    /*+ msgid_splited.next().unwrap().len()
-                    + 1;*/
- //remain of storing the unknown content.
-                    *msgstr = msgid.chars().skip(to_skip).collect();
+                    *msgstr = msgid.clone();
                 };
                 if comment.is_empty() {
                     todo!();
                 };
-                let mut msgid_splited_iterator = msgid.split(' ');
-                if let Some(first_element) = msgid_splited_iterator.next() {
-                    match u32::from_str(first_element) {
-                        Ok(hash) => result.entrys.push(Entry {
-                            hash,
-                            unk: 0,
-                            source_file: comment.to_string(),
-                            text: msgstr.to_string(),
-                        }),
-                        Err(_err) => todo!(),
-                    }
-                } else {
-                    todo!();
+                for comment_line in comment.iter() {
+                    let mut line_splited = comment_line.split(' ');
+                    let file_source = line_splited.next().unwrap();
+                    let hash = u32::from_str(line_splited.next().unwrap()).unwrap();
+                    let unk1 = u32::from_str(line_splited.next().unwrap()).unwrap();
+                    result.entries.push(Entry {
+                        text: msgstr.clone(),
+                        hash,
+                        unk: unk1,
+                        source_file: file_source.to_string(),
+                    });
                 }
+
                 msgstr.clear();
                 msgid.clear();
                 comment.clear();
             };
 
         for (line_nb, line) in file.lines().enumerate() {
+            println!("{}", line_nb);
             if line.is_empty() {
                 continue;
             }
-            if let Some(first_command) = line.split(' ').next() {
+            if Some('\"') == line.chars().next() {
+                
+            } else if let Some(first_command) = line.split(' ').next() {
                 let next_phase = match first_command {
                     "msgstr" => {
                         parsing = Some(Parsing::Msgstr);
@@ -139,7 +203,7 @@ impl GettextWriter {
                     push_current_translation(&mut msgid, &mut msgstr, &mut comment);
                 };
                 if first_command == "#." {
-                    comment = line.chars().skip(3).collect::<String>();
+                    comment.push(line.chars().skip(3).collect::<String>());
                 };
                 phase = next_phase;
             } else {
@@ -151,33 +215,70 @@ impl GettextWriter {
                     Parsing::Msgid => &mut msgid,
                     Parsing::Msgstr => &mut msgstr,
                 };
-                let mut is_inside_quote = false;
-                let mut next_escaped = false;
-                for chara in line.chars() {
-                    if next_escaped {
-                        next_escaped = false;
-                        match chara {
+
+                let mut inside_quote = false;
+                #[derive(PartialEq)]
+                enum Escape {
+                    None,
+                    NextEscaped,
+                    SecondEscaped,
+                    WillBeEscaped,
+                    ReadingNumber
+                }
+                let mut escape = Escape::None;
+                let mut number_being_read = String::new();
+                
+                for ch in line.chars() {
+                    if escape == Escape::SecondEscaped {
+                        if ch == 'x' {
+                            escape = Escape::WillBeEscaped;
+                            continue
+                        } else if ch == 'r' {
+                            escape = Escape::None;
+                            line_no_parentesis.push('\r');
+                        } else {
+                            escape = Escape::None;
+                            line_no_parentesis.push('\\');
+                        };
+                    }
+
+                    if escape == Escape::NextEscaped {
+                        escape = Escape::None;
+                        match ch {
                             'n' => line_no_parentesis.push('\n'),
                             'r' => line_no_parentesis.push('\r'),
-                            _ => line_no_parentesis.push(chara),
-                        };
-                    } else {
-                        match chara {
-                            '\\' => next_escaped = true,
-                            '"' => is_inside_quote = !is_inside_quote,
-                            _ => {
-                                if is_inside_quote {
-                                    line_no_parentesis.push(chara)
-                                }
-                            }
+                            '\\' => escape = Escape::SecondEscaped,
+                            ch => line_no_parentesis.push(ch),
                         }
+                    } else if escape == Escape::WillBeEscaped {
+                        if ch == '{' {
+                            escape = Escape::ReadingNumber;
+                        } else {
+                            todo!("error message");
+                        }
+                    } else if escape == Escape::ReadingNumber {
+                        if ch == '}' {
+                            let new_ch_text = u32::from_str_radix(&number_being_read, 16).unwrap();
+                            let new_ch = char::from_u32(new_ch_text).unwrap();
+                            line_no_parentesis.push(new_ch);
+                            escape = Escape::None;
+                            number_being_read = String::new();
+                        } else {
+                            number_being_read.push(ch);
+                        }
+                    } else if ch == '"' {
+                        inside_quote = !inside_quote;
+                    } else if inside_quote {
+                        if ch == '\\' {
+                            escape = Escape::NextEscaped;
+                        } else if inside_quote {
+                            line_no_parentesis.push(ch);
+                        };
                     }
                 }
-                if is_inside_quote {
-                    warning.push(PoWarning::UnclosedQuote(line_nb))
-                }
-                if next_escaped {
-                    warning.push(PoWarning::UnfinishedEscape(line_nb))
+
+                if escape == Escape::SecondEscaped {
+                    line_no_parentesis.push('\\');
                 }
             };
         }
