@@ -9,6 +9,7 @@ use std::{
 use anyhow::{Context, Result};
 use clap::Clap;
 use message_dehash::{get_file_name, try_possible_name};
+use pmd_code_table::CodeTable;
 use pmd_farc::{hash_name, message_dehash, Farc, FarcWriter};
 use pmd_message::MessageBin;
 use translatepmd::{Entry, GettextWriter};
@@ -18,8 +19,19 @@ use translatepmd::{Entry, GettextWriter};
 struct Opts {
     /// The mode, can be either folder or farc
     mode: Mode,
+    /// The code_table.bin file, containing information about placeholder
+    code_table: PathBuf,
     #[clap(subcommand)]
     subcmd: SubCommand,
+}
+
+impl Opts {
+    pub fn get_code_table(&self) -> Result<CodeTable> {
+        let code_table_file = File::open(&self.code_table).with_context(|| format!("can't open the code_table file at {:?}", self.code_table))?;
+        let mut code_table = CodeTable::new_from_file(code_table_file).context("can't load the code_table file")?;
+        code_table.add_missing();
+        Ok(code_table)
+    }
 }
 
 enum Mode {
@@ -62,30 +74,19 @@ struct FromPoParameter {
 fn main() -> Result<()> {
     let opts = Opts::parse();
 
+    let code_table = opts.get_code_table().context("can't load the code table")?;
+    
     match opts.subcmd {
-        SubCommand::ToPot(topot_p) => topot(opts.mode, topot_p)?,
-        SubCommand::FromPo(frompo_p) => frompo(opts.mode, frompo_p)?,
+        SubCommand::ToPot(topot_p) => topot(&opts.mode, &topot_p, &code_table)?,
+        SubCommand::FromPo(frompo_p) => frompo(&opts.mode, &frompo_p, &code_table)?,
     };
 
     Ok(())
 }
 
-/*fn main() {
-    frompo(Mode::Farc, FromPoParameter {
-        input: "out.pot".into(),
-        output: "./message_us_custom.bin".into()
-    }).unwrap();
-    for (source_name, out_name) in &[("message_us_custom.bin", "1_custom.bin"), ("message_us.bin", "1_original.bin")] {
-        let file = File::open(source_name).unwrap();
-        let farc = Farc::new(file).unwrap();
-        let mut first_file = farc.get_named_file("kaichuuclear1st.bin").unwrap();
-        let mut out_file = File::create(out_name).unwrap();
-        std::io::copy(&mut first_file, &mut out_file).unwrap();
-    };
-}*/
-
-fn topot(mode: Mode, topot_p: ToPotParameter) -> Result<()> {
+fn topot(mode: &Mode, topot_p: &ToPotParameter, code_table: &CodeTable) -> Result<()> {
     let mut gettext = GettextWriter::new();
+    let code_to_text = code_table.generate_code_to_text();
     match mode {
         Mode::Folder => {
             for file_maybe in
@@ -102,7 +103,7 @@ fn topot(mode: Mode, topot_p: ToPotParameter) -> Result<()> {
                     .context("can't transform the file name to an utf8 string")?;
                 let file_path = topot_p.input.join(file_entry.file_name());
                 let mut file = BufReader::new(File::open(file_path)?);
-                let message_bin = MessageBin::load_file(&mut file)?;
+                let message_bin = MessageBin::load_file(&mut file, Some(&code_to_text))?;
                 for (hash, unk, text) in message_bin.messages().iter() {
                     gettext.entries.push(Entry::new(
                         text.clone(),
@@ -147,7 +148,7 @@ fn topot(mode: Mode, topot_p: ToPotParameter) -> Result<()> {
                 let mut message_file = farc.get_named_file(file_name).with_context(|| {
                     format!("can't load the {:?} message file from the farc", file_name)
                 })?;
-                let message_bin = MessageBin::load_file(&mut message_file)?;
+                let message_bin = MessageBin::load_file(&mut message_file, Some(&code_to_text))?;
                 for (hash, unk, text) in message_bin.messages().iter() {
                     gettext.entries.push(Entry::new(
                         text.clone(),
@@ -167,8 +168,10 @@ fn topot(mode: Mode, topot_p: ToPotParameter) -> Result<()> {
     Ok(())
 }
 
-fn frompo(mode: Mode, frompo_p: FromPoParameter) -> Result<()> {
+fn frompo(mode: &Mode, frompo_p: &FromPoParameter, code_table: &CodeTable) -> Result<()> {
     let mut input_file = BufReader::new(File::open(&frompo_p.input)?);
+    let text_to_code = code_table.generate_text_to_code();
+
     let mut po_file = String::new();
     input_file.read_to_string(&mut po_file)?;
 
@@ -193,7 +196,7 @@ fn frompo(mode: Mode, frompo_p: FromPoParameter) -> Result<()> {
             let mut farc_writer = FarcWriter::default();
             for (file_name, message_bin) in translated_file {
                 let mut buffer = Cursor::new(Vec::new());
-                message_bin.write(&mut buffer)?;
+                message_bin.write(&mut buffer, Some(&text_to_code))?;
                 farc_writer.add_hashed_file(hash_name(&file_name), buffer.into_inner());
             }
             let mut out_file = BufWriter::new(File::create(&frompo_p.output)?);

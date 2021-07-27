@@ -76,6 +76,7 @@ pub fn escape_string_for_gettext(text: &str) -> String {
     result.push('"');
     result
 }
+
 impl GettextWriter {
     pub fn new() -> Self {
         Self::default()
@@ -174,7 +175,6 @@ impl GettextWriter {
             };
 
         for (line_nb, line) in file.lines().enumerate() {
-            println!("{}", line_nb);
             if line.is_empty() {
                 continue;
             }

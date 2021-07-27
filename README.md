@@ -1,5 +1,5 @@
 # pmdtranslate
-pmdtranslate is a tool that allow translation of pokemon super mystery dungeon (us rom). It may work with no or minor change on other language or with gates to infinite, but I haven't tested this.
+pmdtranslate is a tool that allow translation of pokemon super mystery dungeon (at least US/EU rom). It may work with no or minor change on other language or with gates to infinite and RTDX, but I haven't tested this.
 
 ## how to use
 This is a command line tool. Right now, I don't provide precompiled binary. I guess you will have to look on how to compile rust program (if cargo is already installed, run ``cargo build --release``).
@@ -14,7 +14,7 @@ Make sure the software keep comments and other metadata, as the comment entry is
 
 Once you start editing the string, the input message are in the form of ``<id> text``. When you translate, you should no include the ``<id>`` as well as the next text. For example, if I have ``1014321 Welcome`` and I want to translate it to french, I should write ``Bonjour``.
 
-There may also have special symbol like ``[CENTER]`` or ``[PARTNERNAME]``. Those are special content that should'nt be translated. If you want to write a ``[``, you need to write ``\[``, and to write a ``\``, you need to write ``\\``. For example, if I want to display ``[HELLO]`` on the screen (rather than having the effect of this character), I would write ``\[HELLO]``. (the ``]`` doesn't need a ``\``).
+There may also have special symbol like ``[CENTER]`` or ``[PARTNERNAME]``. Those are special content that shouldn't be translated. If you want to write a ``[``, you need to write ``\[``, and to write a ``\``, you need to write ``\\``. For example, if I want to display ``[HELLO]`` on the screen (rather than having the effect of this character), I would write ``\[HELLO]``. (the ``]`` doesn't need a ``\``).
 
 ### use translation in game
 First, you'll need a way to patch the game. One cool trick about PSMD is that the game include the functionality to read custom translation (but not custom font) from the SD card. To do this, just place your custom ``message_us.bin`` into the ``private/Nintendo 3DS/app`` folder on the sdcard (create it if needed).
@@ -25,4 +25,4 @@ To create a new ``message_us.bin`` file to translate the game, you'll need to ru
 You can also patch the file using more traditional patching mathod.
 
 ### change font
-You'll need to use [pmdfonttool](https://github.com/marius851000/pmdfonttool). I need to test the possibility to properly adde new character.
+You'll need to use [pmdfonttool](https://github.com/marius851000/pmdfonttool).
