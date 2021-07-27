@@ -275,6 +275,8 @@ dependencies = [
 [[package]]
 name = "pmd_message"
 version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "446fbaaed5e2a380a5254c2224619beff4bcfb80ff7e49652b3c0c80598764bf"
 dependencies = [
  "binread 2.1.1",
  "binwrite",
