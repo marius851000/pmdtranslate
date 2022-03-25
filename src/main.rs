@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::{read_dir, File},
     io::{BufReader, BufWriter, Cursor, Read, Write},
     path::PathBuf,
@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use clap::Clap;
+use clap::Parser;
 use message_dehash::{get_file_name, try_possible_name};
 use pmd_code_table::CodeTable;
 use pmd_farc::{hash_name, message_dehash, Farc, FarcWriter};
@@ -15,7 +15,7 @@ use pmd_message::MessageBin;
 use translatepmd::{Entry, GettextWriter};
 
 /// A tool that can be used to translate PSMD (US rom)
-#[derive(Clap)]
+#[derive(Parser)]
 struct Opts {
     /// The mode, can be either folder or farc
     mode: Mode,
@@ -27,8 +27,10 @@ struct Opts {
 
 impl Opts {
     pub fn get_code_table(&self) -> Result<CodeTable> {
-        let code_table_file = File::open(&self.code_table).with_context(|| format!("can't open the code_table file at {:?}", self.code_table))?;
-        let mut code_table = CodeTable::new_from_file(code_table_file).context("can't load the code_table file")?;
+        let code_table_file = File::open(&self.code_table)
+            .with_context(|| format!("can't open the code_table file at {:?}", self.code_table))?;
+        let mut code_table =
+            CodeTable::new_from_file(code_table_file).context("can't load the code_table file")?;
         code_table.add_missing();
         Ok(code_table)
     }
@@ -51,21 +53,23 @@ impl FromStr for Mode {
     }
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 enum SubCommand {
     ToPot(ToPotParameter),
     FromPo(FromPoParameter),
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 struct ToPotParameter {
     /// The input message folder/farc file (depend on mode)
     input: PathBuf,
     /// The output pot file
     output: PathBuf,
+    /// The list of phrase that could have multiple different meaning
+    unique: Vec<String>,
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 struct FromPoParameter {
     input: PathBuf,
     output: PathBuf,
@@ -75,7 +79,7 @@ fn main() -> Result<()> {
     let opts = Opts::parse();
 
     let code_table = opts.get_code_table().context("can't load the code table")?;
-    
+
     match opts.subcmd {
         SubCommand::ToPot(topot_p) => topot(&opts.mode, &topot_p, &code_table)?,
         SubCommand::FromPo(frompo_p) => frompo(&opts.mode, &frompo_p, &code_table)?,
@@ -85,7 +89,11 @@ fn main() -> Result<()> {
 }
 
 fn topot(mode: &Mode, topot_p: &ToPotParameter, code_table: &CodeTable) -> Result<()> {
-    let mut gettext = GettextWriter::new();
+    let mut unique = BTreeSet::new();
+    for unique_phrase in &topot_p.unique {
+        unique.insert(unique_phrase.to_string());
+    }
+    let mut gettext = GettextWriter::new(unique);
     let code_to_text = code_table.generate_code_to_text();
     match mode {
         Mode::Folder => {

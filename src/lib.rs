@@ -1,4 +1,8 @@
-use std::str::FromStr;
+use std::{
+    borrow::{Borrow, Cow},
+    collections::BTreeSet,
+    str::FromStr,
+};
 use thiserror::Error;
 
 pub struct Entry {
@@ -19,10 +23,12 @@ impl Entry {
     }
 }
 
+const DISCRIMINATOR: &str = "ŧdiscrimatorŧ";
+
 pub struct EntryNoText<'a> {
     pub hash: u32,
     pub unk: u32,
-    pub source_file: &'a str
+    pub source_file: &'a str,
 }
 
 impl<'a> EntryNoText<'a> {
@@ -32,9 +38,9 @@ impl<'a> EntryNoText<'a> {
             Self {
                 hash: entry.hash,
                 unk: entry.unk,
-                source_file: &entry.source_file
+                source_file: &entry.source_file,
             },
-            &entry.text
+            &entry.text,
         )
     }
 }
@@ -50,9 +56,9 @@ pub enum PoWarning {
     UnfinishedEscape(usize),
 }
 
-#[derive(Default)]
 pub struct GettextWriter {
     pub entries: Vec<Entry>,
+    discriminated: BTreeSet<String>,
 }
 
 pub fn escape_string_for_gettext(text: &str) -> String {
@@ -78,8 +84,11 @@ pub fn escape_string_for_gettext(text: &str) -> String {
 }
 
 impl GettextWriter {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(discriminated: BTreeSet<String>) -> Self {
+        Self {
+            entries: Vec::new(),
+            discriminated,
+        }
     }
 
     pub fn to_pot(&self) -> String {
@@ -87,10 +96,19 @@ impl GettextWriter {
 
         // deduplicate the strings
 
-        let mut translate_string: Vec<(&str, Vec<EntryNoText>)> = Vec::new();
+        let mut translate_string: Vec<(Cow<str>, Vec<EntryNoText>)> = Vec::new();
 
         for entry in &self.entries {
             let (entry_no_text, text) = EntryNoText::from_entry(entry);
+            let text = if self.discriminated.contains(text.borrow()) {
+                Cow::from(format!(
+                    "{}{} {} {}",
+                    text, DISCRIMINATOR, entry_no_text.source_file, entry_no_text.hash
+                ))
+            } else {
+                Cow::from(text)
+            };
+
             let mut insert_at = None;
             for entry in translate_string.iter_mut() {
                 if entry.0 == text {
@@ -109,21 +127,26 @@ impl GettextWriter {
 
         for entry in translate_string {
             for source in entry.1 {
-                result.push_str(&format!("#. {} {} {}\n", source.source_file, source.hash, source.unk));
-            };
-            result.push_str(&format!("msgid {}\nmsgstr \"\"\n\n", escape_string_for_gettext(if entry.0 == "" {
-                " "
-            } else {
-                entry.0
-            })));
-        };
+                result.push_str(&format!(
+                    "#. {} {} {}\n",
+                    source.source_file, source.hash, source.unk
+                ));
+            }
+            result.push_str(&format!(
+                "msgid {}\nmsgstr \"\"\n\n",
+                escape_string_for_gettext(if entry.0 == "" { " " } else { entry.0.as_ref() })
+            ));
+        }
 
         result
     }
 
     pub fn from_po(file: String) -> (Self, Vec<PoWarning>) {
         let mut warning = Vec::new();
-        let mut result = GettextWriter { entries: Vec::new() };
+        let mut result = GettextWriter {
+            entries: Vec::new(),
+            discriminated: BTreeSet::default(),
+        };
 
         let mut msgid = String::new();
         let mut msgstr = String::new();
@@ -142,19 +165,20 @@ impl GettextWriter {
         let mut phase = Phase::Pre; //passing from data to comment mean we are into the next part
 
         let mut push_current_translation =
-            |msgid: &mut String, msgstr: &mut String, comment: &mut Vec<String>| {
-                if msgid.is_empty() && comment.is_empty() {
+            |msgid_input: &mut String, msgstr: &mut String, comment: &mut Vec<String>| {
+                if msgid_input.is_empty() && comment.is_empty() {
                     return;
                 };
-                if msgid == " " {
-                    msgid.clear();
+                if msgid_input == " " {
+                    msgid_input.clear();
                     msgstr.clear();
                 };
+                let msgid = msgid_input.split(DISCRIMINATOR).next().unwrap().to_string();
                 if msgstr.is_empty() {
                     *msgstr = msgid.clone();
                 };
                 if comment.is_empty() {
-                    todo!();
+                    todo!("the comment for \"{}\" is empty", msgid_input);
                 };
                 for comment_line in comment.iter() {
                     let mut line_splited = comment_line.split(' ');
@@ -170,7 +194,7 @@ impl GettextWriter {
                 }
 
                 msgstr.clear();
-                msgid.clear();
+                msgid_input.clear();
                 comment.clear();
             };
 
@@ -179,7 +203,6 @@ impl GettextWriter {
                 continue;
             }
             if Some('\"') == line.chars().next() {
-                
             } else if let Some(first_command) = line.split(' ').next() {
                 let next_phase = match first_command {
                     "msgstr" => {
@@ -223,16 +246,16 @@ impl GettextWriter {
                     NextEscaped,
                     SecondEscaped,
                     WillBeEscaped,
-                    ReadingNumber
+                    ReadingNumber,
                 }
                 let mut escape = Escape::None;
                 let mut number_being_read = String::new();
-                
+
                 for ch in line.chars() {
                     if escape == Escape::SecondEscaped {
                         if ch == 'x' {
                             escape = Escape::WillBeEscaped;
-                            continue
+                            continue;
                         } else if ch == 'r' {
                             escape = Escape::None;
                             line_no_parentesis.push('\r');
