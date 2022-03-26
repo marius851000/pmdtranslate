@@ -1,8 +1,4 @@
-use std::{
-    borrow::{Borrow, Cow},
-    collections::BTreeSet,
-    str::FromStr,
-};
+use std::{borrow::Cow, collections::BTreeSet, str::FromStr};
 use thiserror::Error;
 
 pub struct Entry {
@@ -84,10 +80,13 @@ pub fn escape_string_for_gettext(text: &str) -> String {
 }
 
 impl GettextWriter {
-    pub fn new(discriminated: BTreeSet<String>) -> Self {
+    pub fn new(discriminated: Vec<String>) -> Self {
         Self {
             entries: Vec::new(),
-            discriminated,
+            discriminated: discriminated
+                .into_iter()
+                .map(|x| x.to_lowercase())
+                .collect(),
         }
     }
 
@@ -100,7 +99,14 @@ impl GettextWriter {
 
         for entry in &self.entries {
             let (entry_no_text, text) = EntryNoText::from_entry(entry);
-            let text = if self.discriminated.contains(text.borrow()) {
+            let mut should_be_discriminated = false;
+            let text_lower = text.to_lowercase();
+            for discriminator in &self.discriminated {
+                if text_lower.contains(discriminator) {
+                    should_be_discriminated = true;
+                }
+            }
+            let text = if should_be_discriminated {
                 Cow::from(format!(
                     "{}{} {} {}",
                     text, DISCRIMINATOR, entry_no_text.source_file, entry_no_text.hash

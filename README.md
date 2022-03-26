@@ -16,6 +16,8 @@ Once you start editing the string, the input message are in the form of ``<id> t
 
 There may also have special symbol like ``[CENTER]`` or ``[PARTNERNAME]``. Those are special content that shouldn't be translated. If you want to write a ``[``, you need to write ``\[``, and to write a ``\``, you need to write ``\\``. For example, if I want to display ``[HELLO]`` on the screen (rather than having the effect of this character), I would write ``\[HELLO]``. (the ``]`` doesn't need a ``\``).
 
+In addition, you can add extra strings (case insensitive) when calling the program after the parameters so phrase containing it will be differentiated. When translating a file containing "ŧdiscriminatorŧ", don't include anything after the first ŧ.
+
 ### use translation in game
 First, you'll need a way to patch the game. One cool trick about PSMD is that the game include the functionality to read custom translation (but not custom font) from the SD card. To do this, just place your custom ``message_us.bin`` into the ``private/Nintendo 3DS/app`` folder on the sdcard (create it if needed).
 

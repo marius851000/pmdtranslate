@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fs::{read_dir, File},
     io::{BufReader, BufWriter, Cursor, Read, Write},
     path::PathBuf,
@@ -89,11 +89,7 @@ fn main() -> Result<()> {
 }
 
 fn topot(mode: &Mode, topot_p: &ToPotParameter, code_table: &CodeTable) -> Result<()> {
-    let mut unique = BTreeSet::new();
-    for unique_phrase in &topot_p.unique {
-        unique.insert(unique_phrase.to_string());
-    }
-    let mut gettext = GettextWriter::new(unique);
+    let mut gettext = GettextWriter::new(topot_p.unique.clone());
     let code_to_text = code_table.generate_code_to_text();
     match mode {
         Mode::Folder => {
