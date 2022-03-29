@@ -2,7 +2,7 @@ use std::{
     collections::BTreeMap,
     fs::{read_dir, File},
     io::{BufReader, BufWriter, Cursor, Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
 };
 
@@ -17,24 +17,18 @@ use translatepmd::{Entry, GettextWriter};
 /// A tool that can be used to translate PSMD (US rom)
 #[derive(Parser)]
 struct Opts {
-    /// The mode, can be either folder or farc
-    mode: Mode,
-    /// The code_table.bin file, containing information about placeholder
-    code_table: PathBuf,
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
 
-impl Opts {
-    pub fn get_code_table(&self) -> Result<CodeTable> {
-        let code_table_file = File::open(&self.code_table)
-            .with_context(|| format!("can't open the code_table file at {:?}", self.code_table))?;
+pub fn get_code_table(path: &Path) -> Result<CodeTable> {
+    let code_table_file = File::open(path)
+        .with_context(|| format!("can't open the code_table file at {:?}", path))?;
         let mut code_table =
             CodeTable::new_from_file(code_table_file).context("can't load the code_table file")?;
         code_table.add_missing();
         Ok(code_table)
     }
-}
 
 enum Mode {
     Farc,
@@ -61,9 +55,13 @@ enum SubCommand {
 
 #[derive(Parser)]
 struct ToPotParameter {
+    /// The mode, can be either folder or farc
+    mode: Mode,
+    /// The code_table.bin file, containing information about placeholder
+    code_table: PathBuf,
     /// The input message folder/farc file (depend on mode)
     input: PathBuf,
-    /// The output pot file
+    /// The output pot file/folder
     output: PathBuf,
     /// The list of phrase that could have multiple different meaning
     unique: Vec<String>,
@@ -71,6 +69,10 @@ struct ToPotParameter {
 
 #[derive(Parser)]
 struct FromPoParameter {
+    /// The mode, can be either folder or farc
+    mode: Mode,
+    /// The code_table.bin file, containing information about placeholder
+    code_table: PathBuf,
     input: PathBuf,
     output: PathBuf,
 }
@@ -78,20 +80,20 @@ struct FromPoParameter {
 fn main() -> Result<()> {
     let opts = Opts::parse();
 
-    let code_table = opts.get_code_table().context("can't load the code table")?;
-
     match opts.subcmd {
-        SubCommand::ToPot(topot_p) => topot(&opts.mode, &topot_p, &code_table)?,
-        SubCommand::FromPo(frompo_p) => frompo(&opts.mode, &frompo_p, &code_table)?,
+        SubCommand::ToPot(topot_p) => topot(&topot_p)?,
+        SubCommand::FromPo(frompo_p) => frompo(&frompo_p)?,
     };
 
     Ok(())
 }
 
-fn topot(mode: &Mode, topot_p: &ToPotParameter, code_table: &CodeTable) -> Result<()> {
+fn topot(topot_p: &ToPotParameter) -> Result<()> {
+    let code_table = get_code_table(&topot_p.code_table)?;
+
     let mut gettext = GettextWriter::new(topot_p.unique.clone());
     let code_to_text = code_table.generate_code_to_text();
-    match mode {
+    match topot_p.mode {
         Mode::Folder => {
             for file_maybe in
                 read_dir(&topot_p.input).context("can't list files in the input directory")?
@@ -172,8 +174,9 @@ fn topot(mode: &Mode, topot_p: &ToPotParameter, code_table: &CodeTable) -> Resul
     Ok(())
 }
 
-fn frompo(mode: &Mode, frompo_p: &FromPoParameter, code_table: &CodeTable) -> Result<()> {
+fn frompo(frompo_p: &FromPoParameter) -> Result<()> {
     let mut input_file = BufReader::new(File::open(&frompo_p.input)?);
+    let code_table = get_code_table(&frompo_p.code_table)?;
     let text_to_code = code_table.generate_text_to_code();
 
     let mut po_file = String::new();
@@ -184,7 +187,7 @@ fn frompo(mode: &Mode, frompo_p: &FromPoParameter, code_table: &CodeTable) -> Re
         println!("non fatal warning: {}", warning);
     }
 
-    match mode {
+    match frompo_p.mode {
         Mode::Folder => todo!(),
         Mode::Farc => {
             let mut translated_file: BTreeMap<String, MessageBin> = BTreeMap::new();
