@@ -159,6 +159,15 @@ impl FromStr for Mode {
 enum SubCommand {
     ToPot(ToPotParameter),
     FromPo(FromPoParameter),
+    ConvertTranslation(ConvertTranslationParameter),
+}
+
+#[derive(Parser)]
+struct ConvertTranslationParameter {
+    input_type: PoStorageMode,
+    input: PathBuf,
+    output_type: PoStorageMode,
+    output: PathBuf,
 }
 
 #[derive(Parser)]
@@ -196,6 +205,9 @@ fn main() -> Result<()> {
         SubCommand::ToPot(topot_p) => topot(&topot_p).context("while creating the POT file")?,
         SubCommand::FromPo(frompo_p) => {
             frompo(&frompo_p).context("While creating the translation .bin file")?
+        }
+        SubCommand::ConvertTranslation(convert_p) => {
+            convert_translation(&convert_p).context("While converting the translation")?
         }
     };
 
@@ -322,5 +334,17 @@ fn frompo(frompo_p: &FromPoParameter) -> Result<()> {
             farc_writer.write_hashed(&mut out_file)?;
         }
     }
+    Ok(())
+}
+
+fn convert_translation(converttrans_p: &ConvertTranslationParameter) -> Result<()> {
+    let gettext_input = converttrans_p
+        .input_type
+        .read(&converttrans_p.input)
+        .context("can't read the input file")?;
+    converttrans_p
+        .output_type
+        .write(&converttrans_p.output, gettext_input)
+        .context("can't write the output file")?;
     Ok(())
 }
