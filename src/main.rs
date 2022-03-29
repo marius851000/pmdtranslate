@@ -100,6 +100,42 @@ impl PoStorageMode {
             }
         }
     }
+
+    pub fn read(self, path: &Path) -> Result<GettextWriter> {
+        match self {
+            Self::File => {
+                let mut input_file = File::open(path)
+                    .with_context(|| format!("can't open the file at {:?}", path))?;
+                let mut po_file = String::new();
+                input_file.read_to_string(&mut po_file)?;
+
+                let (translation, warnings) = GettextWriter::from_po(po_file);
+                for warning in &warnings {
+                    println!("non fatal warning: {}", warning);
+                }
+                return Ok(translation);
+            }
+            Self::Folder => {
+                let mut gettext = GettextWriter::new(Vec::new());
+                for entry in read_dir(path).with_context(|| {
+                    format!("can't get the list of files in the folder {:?}", path)
+                })? {
+                    let entry = entry.with_context(|| {
+                        format!("Can't read an entry of a subfile of {:?}", path)
+                    })?;
+                    let subfile = (Self::File {}).read(&entry.path()).with_context(|| {
+                        format!(
+                            "Can't read the {:?} subfile of {:?}",
+                            entry.file_name(),
+                            path
+                        )
+                    })?;
+                    gettext.merge(subfile);
+                }
+                Ok(gettext)
+            }
+        }
+    }
 }
 
 enum Mode {
@@ -147,6 +183,8 @@ struct FromPoParameter {
     mode: Mode,
     /// The code_table.bin file, containing information about placeholder
     code_table: PathBuf,
+    /// The type of output. either file or folder
+    storage_mode: PoStorageMode,
     input: PathBuf,
     output: PathBuf,
 }
@@ -253,17 +291,13 @@ fn topot(topot_p: &ToPotParameter) -> Result<()> {
 }
 
 fn frompo(frompo_p: &FromPoParameter) -> Result<()> {
-    let mut input_file = BufReader::new(File::open(&frompo_p.input)?);
     let code_table = get_code_table(&frompo_p.code_table)?;
+
     let text_to_code = code_table.generate_text_to_code();
-
-    let mut po_file = String::new();
-    input_file.read_to_string(&mut po_file)?;
-
-    let (translation, warnings) = GettextWriter::from_po(po_file);
-    for warning in &warnings {
-        println!("non fatal warning: {}", warning);
-    }
+    let translation = frompo_p
+        .storage_mode
+        .read(&frompo_p.input)
+        .context("can't read the po input")?;
 
     match frompo_p.mode {
         Mode::Folder => todo!(),

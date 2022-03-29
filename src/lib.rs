@@ -315,4 +315,10 @@ impl GettextWriter {
 
         (result, warning)
     }
+
+    pub fn merge(&mut self, other: Self) {
+        for entry in other.entries {
+            self.entries.push(entry);
+        }
+    }
 }
