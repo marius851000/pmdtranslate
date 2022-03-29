@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    fs::{read_dir, File},
+    fs::{create_dir_all, read_dir, File},
     io::{BufReader, BufWriter, Cursor, Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
@@ -24,11 +24,83 @@ struct Opts {
 pub fn get_code_table(path: &Path) -> Result<CodeTable> {
     let code_table_file = File::open(path)
         .with_context(|| format!("can't open the code_table file at {:?}", path))?;
-        let mut code_table =
-            CodeTable::new_from_file(code_table_file).context("can't load the code_table file")?;
-        code_table.add_missing();
-        Ok(code_table)
+    let mut code_table =
+        CodeTable::new_from_file(code_table_file).context("can't load the code_table file")?;
+    code_table.add_missing();
+    Ok(code_table)
+}
+
+#[derive(Clone, Copy)]
+enum PoStorageMode {
+    File,
+    Folder,
+}
+
+impl FromStr for PoStorageMode {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, &'static str> {
+        match s {
+            "file" => Ok(PoStorageMode::File),
+            "folder" => Ok(PoStorageMode::Folder),
+            _ => Err("The mod should be either 'file' or 'folder'".into()),
+        }
     }
+}
+
+impl PoStorageMode {
+    pub fn write(self, path: &Path, content: GettextWriter) -> Result<()> {
+        match self {
+            PoStorageMode::File => {
+                let pot = content.to_pot();
+                let mut file = File::create(path).with_context(|| {
+                    format!("can't create the POT file at {:?}", path.to_string_lossy())
+                })?;
+                file.write_all(pot.as_bytes()).with_context(|| {
+                    format!(
+                        "can't write to the POT file at {:?}",
+                        path.to_string_lossy()
+                    )
+                })?;
+                Ok(())
+            }
+            PoStorageMode::Folder => {
+                let mut files: BTreeMap<String, GettextWriter> = BTreeMap::new();
+                for entry in content.entries.into_iter() {
+                    let source_file = entry.source_file.clone();
+                    let specific_file = files
+                        .entry(source_file)
+                        .or_insert_with(|| GettextWriter::new(Vec::new()));
+                    specific_file.entries.push(entry);
+                }
+                create_dir_all(path).with_context(|| {
+                    format!(
+                        "can't create the POT files folder at {:?}",
+                        path.to_string_lossy()
+                    )
+                })?;
+                for (source_file, gettext) in files.into_iter() {
+                    let source_file = format!("{}.po", source_file.split(".").next().unwrap_or(""));
+                    let mut file =
+                        File::create(path.join(source_file.clone())).with_context(|| {
+                            format!(
+                                "can't create the POT file at {:?}",
+                                path.join(&source_file).to_string_lossy()
+                            )
+                        })?;
+                    file.write_all(gettext.to_pot().as_bytes())
+                        .with_context(|| {
+                            format!(
+                                "can't write to the POT file at {:?}",
+                                path.join(source_file).to_string_lossy()
+                            )
+                        })?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
 
 enum Mode {
     Farc,
@@ -59,6 +131,8 @@ struct ToPotParameter {
     mode: Mode,
     /// The code_table.bin file, containing information about placeholder
     code_table: PathBuf,
+    /// The type of output. either file or folder
+    storage_mode: PoStorageMode,
     /// The input message folder/farc file (depend on mode)
     input: PathBuf,
     /// The output pot file/folder
@@ -81,15 +155,18 @@ fn main() -> Result<()> {
     let opts = Opts::parse();
 
     match opts.subcmd {
-        SubCommand::ToPot(topot_p) => topot(&topot_p)?,
-        SubCommand::FromPo(frompo_p) => frompo(&frompo_p)?,
+        SubCommand::ToPot(topot_p) => topot(&topot_p).context("while creating the POT file")?,
+        SubCommand::FromPo(frompo_p) => {
+            frompo(&frompo_p).context("While creating the translation .bin file")?
+        }
     };
 
     Ok(())
 }
 
 fn topot(topot_p: &ToPotParameter) -> Result<()> {
-    let code_table = get_code_table(&topot_p.code_table)?;
+    let code_table =
+        get_code_table(&topot_p.code_table).context("can't read the code_table.bin file")?;
 
     let mut gettext = GettextWriter::new(topot_p.unique.clone());
     let code_to_text = code_table.generate_code_to_text();
@@ -167,9 +244,10 @@ fn topot(topot_p: &ToPotParameter) -> Result<()> {
         }
     }
 
-    let mut out_file =
-        BufWriter::new(File::create(&topot_p.output).context("can't open the output file")?);
-    out_file.write_all(gettext.to_pot().as_bytes())?;
+    topot_p
+        .storage_mode
+        .write(&topot_p.output, gettext)
+        .context("can't write the result file")?;
 
     Ok(())
 }
